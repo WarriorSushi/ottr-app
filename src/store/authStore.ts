@@ -7,6 +7,8 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/supabaseClient';
 import * as authService from '../services/supabase/authService';
+import notificationService from '../services/notifications/notificationService';
+import { OttrPushTokenService } from '../services/notifications/pushTokenService';
 import { User } from '@supabase/supabase-js';
 
 // Auth store state interface
@@ -48,6 +50,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       // Get user from session
       const user = await authService.getCurrentUser();
+      
+      // Register push notifications token
+      if (user) {
+        await notificationService.registerPushToken();
+      }
+      
       set({ 
         user, 
         isAuthenticated: !!user,
@@ -71,6 +79,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!result.success) {
         set({ error: result.error || 'Sign out failed', isLoading: false });
         return;
+      }
+      
+      // Remove push token on sign out
+      const { user } = get();
+      if (user?.id) {
+        const pushSvc = new OttrPushTokenService();
+        await pushSvc.removeUserPushToken(user.id);
       }
       
       set({ 

@@ -19,12 +19,15 @@ import {
 import Animated, { 
   useAnimatedStyle, 
   withTiming, 
+  withSpring,
   useSharedValue 
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useMessageStore } from '../../store/messageStore';
 import OttrText from '../common/OttrText';
 import theme from '../../constants/theme';
+import animations from '../../constants/animations';
+import { triggerLightImpact } from '@utils/haptics';
 
 // Maximum message length
 const MAX_MESSAGE_LENGTH = 500;
@@ -130,6 +133,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
     }
     
     // Send the message
+    triggerLightImpact();
     onSendMessage(message.trim());
     setMessage('');
     
@@ -139,8 +143,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
     if (onTypingStatusChange) onTypingStatusChange(false);
     
     // Animate the send button
-    sendButtonScale.value = withTiming(1, { duration: 100 }, () => {
-      sendButtonScale.value = withTiming(0.8, { duration: 100 });
+    sendButtonScale.value = withSpring(1, animations.SPRINGS.RESPONSIVE, () => {
+      sendButtonScale.value = withSpring(0.8, animations.SPRINGS.RESPONSIVE);
     });
     
     // Focus the input after sending

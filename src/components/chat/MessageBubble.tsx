@@ -12,6 +12,7 @@ import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import OttrText from '../common/OttrText';
 import theme from '../../constants/theme';
+import animations from '../../constants/animations';
 import { Message } from '../../types/database';
 import { useMessageStore } from '../../store/messageStore';
 
@@ -84,7 +85,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         styles.container,
         isCurrentUser ? styles.sentContainer : styles.receivedContainer,
       ]}
-      entering={isCurrentUser ? SlideInRight.duration(300) : SlideInLeft.duration(300)}
+      entering={isCurrentUser ? SlideInRight.duration(animations.DURATIONS.NORMAL) : SlideInLeft.duration(animations.DURATIONS.NORMAL)}
     >
       <Pressable
         style={[

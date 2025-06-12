@@ -13,6 +13,7 @@ import { RootStackParamList } from './navigationTypes';
 import AuthStack from './AuthStack';
 import MainStack from './MainStack';
 import theme from '../constants/theme';
+import animations from '../constants/animations';
 import { supabase } from '../services/supabase/supabaseClient';
 import { onAuthStateChange } from '../services/supabase/authService';
 
@@ -102,7 +103,40 @@ const AppNavigator: React.FC = () => {
 
   return (
     <NavigationContainer theme={navigationTheme} linking={linking}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          // Slide up transition for screens
+          cardStyleInterpolator: ({ current, layouts }) => ({
+            cardStyle: {
+              transform: [
+                {
+                  translateY: current.progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [layouts.screen.height, 0],
+                  }),
+                },
+              ],
+            },
+          }),
+          transitionSpec: {
+            open: {
+              animation: 'timing',
+              config: {
+                duration: animations.DURATIONS.NORMAL,
+                easing: animations.EASINGS.OUT,
+              },
+            },
+            close: {
+              animation: 'timing',
+              config: {
+                duration: animations.DURATIONS.NORMAL,
+                easing: animations.EASINGS.OUT,
+              },
+            },
+          },
+        }}
+      >
         {isAuthenticated ? (
           <Stack.Screen name="Main" component={MainStack} />
         ) : (

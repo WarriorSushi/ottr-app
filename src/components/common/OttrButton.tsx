@@ -22,6 +22,8 @@ import Animated, {
   withSpring 
 } from 'react-native-reanimated';
 import theme from '../../constants/theme';
+import animations from '../../constants/animations';
+import { triggerLightImpact } from '@utils/haptics';
 
 // Animated TouchableOpacity
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -72,18 +74,19 @@ const OttrButton: React.FC<OttrButtonProps> = ({
 
   // Handle press in animation
   const handlePressIn = () => {
-    scale.value = withSpring(0.96, {
-      damping: 15,
-      stiffness: 150,
-    });
+    scale.value = withSpring(0.96, animations.SPRINGS.RESPONSIVE);
   };
 
   // Handle press out animation
   const handlePressOut = () => {
-    scale.value = withSpring(1, {
-      damping: 15,
-      stiffness: 150,
-    });
+    scale.value = withSpring(1, animations.SPRINGS.RESPONSIVE);
+  };
+
+  // Handle press
+  const handlePress = () => {
+    if (disabled) return;
+    triggerLightImpact();
+    onPress?.();
   };
 
   // Animated styles
@@ -179,7 +182,7 @@ const OttrButton: React.FC<OttrButtonProps> = ({
 
   return (
     <AnimatedTouchable
-      onPress={onPress}
+      onPress={handlePress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled || loading}

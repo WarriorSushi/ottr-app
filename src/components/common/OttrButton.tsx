@@ -27,7 +27,7 @@ import theme from '../../constants/theme';
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 // Button variants
-export type ButtonVariant = 'primary' | 'secondary' | 'outline';
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'destructive';
 
 // Button sizes
 export type ButtonSize = 'small' | 'medium' | 'large';
@@ -107,6 +107,9 @@ const OttrButton: React.FC<OttrButtonProps> = ({
         borderWidth: 1,
         borderColor: theme.colors.primary,
       },
+      destructive: {
+        backgroundColor: theme.colors.accent, // use accent (#FF8A80)
+      },
     };
 
     const sizeStyles = {
@@ -148,6 +151,9 @@ const OttrButton: React.FC<OttrButtonProps> = ({
       },
       outline: {
         color: theme.colors.primary,
+      },
+      destructive: {
+        color: '#FFFFFF',
       },
     };
 

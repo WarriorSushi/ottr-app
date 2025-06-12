@@ -11,6 +11,8 @@ import { useConnectionStore } from '../../store/connectionStore';
 import supabase from '../../services/supabase/supabaseClient';
 import { MainStackParamList } from '../../navigation/navigationTypes';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import DisconnectConfirmModal from '../modals/DisconnectConfirmModal';
+import { useMessageStore } from '../../store/messageStore';
 
 export type SettingsScreenProps = NativeStackScreenProps<MainStackParamList, 'Settings'>;
 
@@ -22,10 +24,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     connectionStatus,
     disconnect,
   } = useConnectionStore();
+  const { resetStore: resetMessageStore } = useMessageStore();
 
   const [isEditing, setIsEditing] = useState(false);
   const [nameInput, setNameInput] = useState(user?.display_name || '');
   const [loadingName, setLoadingName] = useState(false);
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
 
   const handleSaveName = async () => {
     const trimmed = nameInput.trim();
@@ -47,25 +51,20 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     setIsEditing(false);
   };
 
+  const confirmDisconnect = async () => {
+    setShowDisconnectModal(false);
+    const success = await disconnect(user!.id);
+    if (success) {
+      resetMessageStore();
+      // refresh connection information
+      setUser({ ...user!, connected_to: null, connection_status: 'disconnected' } as any);
+      navigation.navigate('Search');
+    }
+  };
+
   const handleDisconnect = () => {
     if (!connectedUser) return;
-    Alert.alert(
-      'Disconnect',
-      'Are you sure you want to disconnect? Chat history will be cleared.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            const success = await disconnect(user!.id);
-            if (success) {
-              navigation.navigate('Search');
-            }
-          },
-        },
-      ],
-    );
+    setShowDisconnectModal(true);
   };
 
   return (
@@ -99,9 +98,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             />
             <OttrButton
               title="Disconnect"
-              variant="secondary"
-              onPress={handleDisconnect}
+              variant="destructive"
               style={styles.disconnectBtn}
+              onPress={handleDisconnect}
             />
           </>
         )}
@@ -151,6 +150,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      <DisconnectConfirmModal
+        visible={showDisconnectModal}
+        onCancel={() => setShowDisconnectModal(false)}
+        onConfirm={confirmDisconnect}
+      />
     </ScrollView>
   );
 };

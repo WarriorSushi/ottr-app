@@ -11,10 +11,16 @@ import notificationService from '../services/notifications/notificationService';
 import { OttrPushTokenService } from '../services/notifications/pushTokenService';
 import { User } from '@supabase/supabase-js';
 
+// Extend Supabase User type with profile fields stored in `users` table
+export interface OttrUser extends User {
+  display_name?: string;
+  username?: string;
+}
+
 // Auth store state interface
 interface AuthState {
   // State
-  user: User | null;
+  user: OttrUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
@@ -23,6 +29,7 @@ interface AuthState {
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   setupProfile: (username: string, displayName: string) => Promise<boolean>;
+  setUser: (user: OttrUser | null) => void;
   clearError: () => void;
 }
 
@@ -57,7 +64,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       set({ 
-        user, 
+        user: user as OttrUser, 
         isAuthenticated: !!user,
         isLoading: false 
       });
@@ -146,7 +153,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
   
-  // Clear error
+  setUser: (u) => set({ user: u }),
+  
   clearError: () => set({ error: null }),
 }));
 

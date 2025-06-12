@@ -5,7 +5,7 @@
  * message grouping, date separators, and inverted layout.
  */
 
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -27,6 +27,8 @@ interface MessageListProps {
   isLoading: boolean;
   onRefresh: () => void;
   onEndReached: () => void;
+  initialScrollOffset?: number;
+  onScrollOffsetChange?: (offset: number) => void;
 }
 
 // Type for grouped messages with date headers
@@ -43,6 +45,8 @@ const MessageList: React.FC<MessageListProps> = ({
   isLoading,
   onRefresh,
   onEndReached,
+  initialScrollOffset = 0,
+  onScrollOffsetChange,
 }) => {
   // Reference to the FlatList for scrolling
   const flatListRef = useRef<FlatList>(null);
@@ -183,6 +187,15 @@ const MessageList: React.FC<MessageListProps> = ({
     );
   };
   
+  // Scroll to saved offset on mount
+  useEffect(() => {
+    if (initialScrollOffset > 0 && flatListRef.current) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToOffset({ offset: initialScrollOffset, animated: false });
+      }, 100);
+    }
+  }, [initialScrollOffset]);
+  
   return (
     <FlatList
       ref={flatListRef}
@@ -204,6 +217,8 @@ const MessageList: React.FC<MessageListProps> = ({
       }
       ListEmptyComponent={renderEmptyComponent}
       ListFooterComponent={renderFooter}
+      onScroll={onScrollOffsetChange ? (e) => onScrollOffsetChange(e.nativeEvent.contentOffset.y) : undefined}
+      scrollEventThrottle={16}
       // Performance optimizations
       removeClippedSubviews={true}
       maxToRenderPerBatch={10}

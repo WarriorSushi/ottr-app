@@ -31,9 +31,11 @@ import { useAuthStore } from '../../store/authStore';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useMessageStore } from '../../store/messageStore';
 import { Message } from '../../types/database';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-
-
+/**
+ * ChatScreen Component
+ */
 type ChatScreenProps = {
   navigation: StackNavigationProp<MainStackParamList, 'Chat'>;
   route: {
@@ -44,9 +46,6 @@ type ChatScreenProps = {
   };
 };
 
-/**
- * ChatScreen Component
- */
 const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   // Get the connected user's username and ID from route params
   const { username, userId } = route.params;
@@ -66,7 +65,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     loadMoreMessages,
     sendMessage,
     cleanupSubscriptions,
-    resetStore
+    resetStore,
+    getDraft,
+    setDraft,
+    getScrollOffset,
+    setScrollOffset,
   } = useMessageStore();
   
   // Reference to track app state
@@ -82,10 +85,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
           // Initialize message store with user IDs
           initializeStore(user.id, partnerId);
         } else {
-          // If no partner ID yet, get connected user first
-          getConnectedUser(user.id).then(response => {
-            if (response?.success && response.data) {
-              initializeStore(user.id, response.data.id);
+          // If no partner ID yet, get connected user first via store action
+          getConnectedUser(user.id).then(() => {
+            const partner = useConnectionStore.getState().connectedUser;
+            if (partner?.id) {
+              initializeStore(user.id, partner.id);
             }
           });
         }
@@ -108,7 +112,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       // App has come to the foreground
       if (user?.id && (userId || connectedUser?.id)) {
         // Refresh messages
-        loadMessages(user.id, userId || connectedUser?.id as string, true);
+        loadMessages(user.id, (userId || connectedUser?.id)!, true);
       }
     }
     
@@ -119,14 +123,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   const handleRefreshMessages = () => {
     if (!user?.id || !(userId || connectedUser?.id)) return;
     
-    loadMessages(user.id, userId || connectedUser?.id, true);
+    loadMessages(user.id, (userId || connectedUser?.id)!, true);
   };
   
   // Load more messages when scrolling up
   const handleLoadMoreMessages = () => {
     if (!user?.id || !(userId || connectedUser?.id)) return;
     
-    loadMoreMessages(user.id, userId || connectedUser?.id);
+    loadMoreMessages(user.id, (userId || connectedUser?.id)!);
   };
   
   // Send a new message
@@ -140,6 +144,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   // Navigate to settings
   const handleGoToSettings = () => {
     navigation.navigate('Settings');
+  };
+  
+  // Persist scroll offset
+  const handleScrollOffsetChange = (offset: number) => {
+    const partnerId = userId || connectedUser?.id;
+    if (partnerId) {
+      setScrollOffset(partnerId, offset);
+    }
   };
   
   // Render the header with connected user info
@@ -176,8 +188,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     );
   };
   
+  const insets = useSafeAreaInsets();
+  
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
       {renderHeader()}
       
       <KeyboardAvoidingView
@@ -199,6 +213,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
           isLoading={isLoadingMessages}
           onRefresh={handleRefreshMessages}
           onEndReached={handleLoadMoreMessages}
+          initialScrollOffset={getScrollOffset(userId || connectedUser?.id || '')}
+          onScrollOffsetChange={handleScrollOffsetChange}
         />
         
         {partnerIsTyping && (
@@ -210,6 +226,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
           isLoading={isSendingMessage}
           placeholder="Type a message..."
           showCharacterCount={true}
+          initialValue={getDraft(userId || connectedUser?.id || '')}
+          onDraftChange={(draft: string) => {
+            const partnerId = userId || connectedUser?.id;
+            if (partnerId) setDraft(partnerId, draft);
+          }}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>

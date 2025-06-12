@@ -17,6 +17,7 @@ import { supabase } from '../services/supabase/supabaseClient';
 import { useAuthStore } from './authStore';
 import { useConnectionStore } from './connectionStore';
 import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Type for typing indicators
 interface TypingIndicator {
@@ -25,10 +26,15 @@ interface TypingIndicator {
   updatedAt: string;
 }
 
+// Local extension of Message including UI status
+export interface LocalMessage extends Message {
+  localStatus?: 'sending' | 'sent' | 'read' | 'failed';
+}
+
 // Interface for the message store state
 interface MessageState {
   // Message data
-  messages: Message[];
+  messages: LocalMessage[];
   hasMoreMessages: boolean;
   isLoadingMessages: boolean;
   isLoadingMore: boolean;
@@ -42,7 +48,7 @@ interface MessageState {
   // Typing indicator
   partnerIsTyping: boolean;
   isTyping: boolean;
-  typingTimeout: NodeJS.Timeout | null;
+  typingTimeout: ReturnType<typeof setTimeout> | null;
   
   // Subscriptions
   messageSubscription: RealtimeChannel | null;
@@ -50,6 +56,11 @@ interface MessageState {
   
   // Network status
   isOnline: boolean;
+  
+  // Drafts per partner
+  drafts: Record<string, string>;
+  // Scroll positions per partner (offset in px)
+  scrollPositions: Record<string, number>;
   
   // Actions
   initializeStore: (userId: string, partnerId: string) => Promise<void>;
@@ -61,7 +72,12 @@ interface MessageState {
   setTypingStatus: (isTyping: boolean) => Promise<void>;
   cleanupSubscriptions: () => void;
   processOfflineQueue: () => Promise<void>;
+  retryFailedMessage: (tempId: string) => Promise<void>;
   resetStore: () => void;
+  setDraft: (partnerId: string, draft: string) => Promise<void>;
+  getDraft: (partnerId: string) => string;
+  setScrollOffset: (partnerId: string, offset: number) => void;
+  getScrollOffset: (partnerId: string) => number;
 }
 
 export const useMessageStore = create<MessageState>((set, get) => ({
@@ -89,6 +105,11 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   // Network status
   isOnline: true,
   
+  // Drafts per partner
+  drafts: {},
+  // Scroll positions per partner (offset in px)
+  scrollPositions: {},
+  
   /**
    * Initialize the message store
    */
@@ -103,6 +124,10 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       // If we're coming back online, process the offline queue
       if (isConnected && !get().isOnline) {
         get().processOfflineQueue();
+        const authUser = useAuthStore.getState().user;
+        if (authUser?.id) {
+          get().initializeStore(authUser.id, partnerId);
+        }
       }
       
       set({ isOnline: isConnected });
@@ -141,6 +166,23 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       typingSubscription,
     });
     
+    // Load cached draft
+    const savedDraft = await AsyncStorage.getItem(`draft-${partnerId}`);
+    if (savedDraft !== null) {
+      set(state => ({ drafts: { ...state.drafts, [partnerId]: savedDraft } }));
+    }
+
+    // Load cached recent messages for quick UI
+    const cachedMessages = await AsyncStorage.getItem(`messages-${userId}-${partnerId}`);
+    if (cachedMessages) {
+      try {
+        const parsed: Message[] = JSON.parse(cachedMessages);
+        if (Array.isArray(parsed) && parsed.length) {
+          set({ messages: parsed });
+        }
+      } catch {}
+    }
+    
     // Load initial messages
     await get().loadMessages(userId, partnerId);
     
@@ -170,12 +212,21 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       }
       
       // If refreshing, replace messages, otherwise append them
-      set(state => ({
-        messages: refresh ? data : [...state.messages, ...data],
-        hasMoreMessages: data.length === get().messagesPerPage,
-        currentPage: refresh ? 0 : state.currentPage,
-        isLoadingMessages: false,
-      }));
+      set(state => {
+        const combined = refresh ? data : [...state.messages, ...data];
+        const trimmed = combined.slice(-200); // limit to last 200 messages in memory
+        // Cache recent 100 messages for quick restore
+        AsyncStorage.setItem(
+          `messages-${userId}-${partnerId}`,
+          JSON.stringify(trimmed.slice(-100))
+        ).catch(() => {});
+        return {
+          messages: trimmed,
+          hasMoreMessages: data.length === get().messagesPerPage,
+          currentPage: refresh ? 0 : state.currentPage,
+          isLoadingMessages: false,
+        };
+      });
       
       // Mark all unread messages from partner as read
       const unreadMessages = data.filter(
@@ -217,12 +268,21 @@ export const useMessageStore = create<MessageState>((set, get) => ({
         throw new Error(error || 'Failed to load more messages');
       }
       
-      set(state => ({
-        messages: [...state.messages, ...data],
-        hasMoreMessages: data.length === get().messagesPerPage,
-        currentPage: nextPage,
-        isLoadingMore: false,
-      }));
+      set(state => {
+        const combined = [...state.messages, ...data];
+        const trimmed = combined.slice(-200);
+        // Cache latest 100
+        AsyncStorage.setItem(
+          `messages-${userId}-${partnerId}`,
+          JSON.stringify(trimmed.slice(-100))
+        ).catch(() => {});
+        return {
+          messages: trimmed,
+          hasMoreMessages: data.length === get().messagesPerPage,
+          currentPage: nextPage,
+          isLoadingMore: false,
+        };
+      });
     } catch (error) {
       set({
         isLoadingMore: false,
@@ -254,13 +314,14 @@ export const useMessageStore = create<MessageState>((set, get) => ({
         messageService.addToOfflineQueue(connectedUser.id, content);
         
         // Add optimistic message to state
-        const optimisticMessage: Message = {
+        const optimisticMessage: LocalMessage = {
           id: `offline-${Date.now()}`,
           content,
           from_user: user.id,
           to_user: connectedUser.id,
           created_at: new Date().toISOString(),
           read_at: null,
+          localStatus: 'sending',
         };
         
         set(state => ({
@@ -271,6 +332,23 @@ export const useMessageStore = create<MessageState>((set, get) => ({
         return;
       }
       
+      // Optimistically add the message with localStatus = 'sending'
+      const tempId = `temp-${Date.now()}`;
+      set(state => ({
+        messages: [
+          {
+            id: tempId,
+            from_user: user.id,
+            to_user: connectedUser.id,
+            content,
+            created_at: new Date().toISOString(),
+            read_at: null,
+            localStatus: 'sending',
+          } as LocalMessage,
+          ...state.messages,
+        ],
+      }));
+      
       // Send the message
       const { success, data, error } = await messageService.sendMessage(
         user.id,
@@ -279,12 +357,20 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       );
       
       if (!success || !data) {
+        // Mark optimistic message as failed
+        set(state => ({
+          messages: state.messages.map(msg =>
+            msg.id === tempId ? { ...msg, localStatus: 'failed' } : msg
+          ),
+        }));
         throw new Error(error || 'Failed to send message');
       }
       
-      // Add the new message to the state
+      // Replace the optimistic message with the real one
       set(state => ({
-        messages: [data, ...state.messages],
+        messages: state.messages.map(msg =>
+          msg.id === tempId ? { ...data, localStatus: 'sent' } : msg
+        ),
         isSendingMessage: false,
       }));
     } catch (error) {
@@ -354,23 +440,24 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       }
       
       // Clear any existing timeout
-      if (get().typingTimeout) {
-        clearTimeout(get().typingTimeout);
+      const { typingTimeout } = get();
+      if (typingTimeout) {
+        clearTimeout(typingTimeout);
       }
       
       // Set typing status in state
       set({ isTyping });
       
       // If typing, set a timeout to clear it after 5 seconds
-      let typingTimeout: NodeJS.Timeout | null = null;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
       
       if (isTyping) {
-        typingTimeout = setTimeout(() => {
+        timeoutId = setTimeout(() => {
           get().setTypingStatus(false);
         }, 5000);
       }
       
-      set({ typingTimeout });
+      set({ typingTimeout: timeoutId });
       
       // Update typing indicator in database
       await messageService.setTypingIndicator(
@@ -380,6 +467,26 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       );
     } catch (error) {
       console.error('Error setting typing status:', error);
+    }
+  },
+  
+  /**
+   * Retry sending a failed message
+   */
+  retryFailedMessage: async (tempId: string) => {
+    try {
+      const msg = get().messages.find(m => m.id === tempId);
+      if (!msg || msg.localStatus !== 'failed') return;
+      
+      // Re-invoke sendMessage with same content
+      await get().sendMessage(msg.content);
+      
+      // Remove the failed temp message
+      set(state => ({
+        messages: state.messages.filter(m => m.id !== tempId),
+      }));
+    } catch (error) {
+      console.error('Retry failed:', error);
     }
   },
   
@@ -443,6 +550,39 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       currentPage: 0,
       partnerIsTyping: false,
       isTyping: false,
+      drafts: {},
+      scrollPositions: {},
     });
+  },
+  
+  /**
+   * Set draft
+   */
+  setDraft: async (partnerId: string, draft: string) => {
+    set(state => ({ drafts: { ...state.drafts, [partnerId]: draft } }));
+    try {
+      await AsyncStorage.setItem(`draft-${partnerId}`, draft);
+    } catch {}
+  },
+  
+  /**
+   * Get draft
+   */
+  getDraft: (partnerId: string) => {
+    return get().drafts[partnerId] || '';
+  },
+  
+  /**
+   * Set scroll offset
+   */
+  setScrollOffset: (partnerId: string, offset: number) => {
+    set(state => ({ scrollPositions: { ...state.scrollPositions, [partnerId]: offset } }));
+  },
+  
+  /**
+   * Get scroll offset
+   */
+  getScrollOffset: (partnerId: string) => {
+    return get().scrollPositions[partnerId] || 0;
   },
 }));

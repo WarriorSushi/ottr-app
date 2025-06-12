@@ -35,6 +35,8 @@ interface MessageInputProps {
   placeholder?: string;
   showCharacterCount?: boolean;
   onTypingStatusChange?: (isTyping: boolean) => void;
+  initialValue?: string;
+  onDraftChange?: (draft: string) => void;
 }
 
 /**
@@ -46,9 +48,11 @@ const MessageInput: React.FC<MessageInputProps> = ({
   placeholder = 'Type a message...',
   showCharacterCount = true,
   onTypingStatusChange,
+  initialValue = '',
+  onDraftChange,
 }) => {
   // State for the message text
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(initialValue);
   const [isTyping, setIsTyping] = useState(false);
   const [showError, setShowError] = useState(false);
   
@@ -151,6 +155,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
     }
     
     setMessage(text);
+    if (onDraftChange) onDraftChange(text);
     
     // Show error if over character limit
     if (text.length > MAX_MESSAGE_LENGTH && !showError) {
